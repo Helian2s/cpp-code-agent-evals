@@ -1,0 +1,31 @@
+{
+  "dataset_dir": "data/dataset",
+  "runs_dir": "runs",
+  "repo_sources": {
+    "fmtlib/fmt": "/home/val/Documents/cpp-agent/fmt",
+    "nlohmann/json": "/home/val/Documents/cpp-agent/json"
+  },
+  "build_jobs": 0,
+  "max_parallel": 1,
+  "timeouts": {
+    "checkout_sec": 300,
+    "build_sec": 1800,
+    "agent_sec": 3600,
+    "tests_sec": 1800
+  },
+  "agent": {
+    "sut_binary": "/home/val/Documents/cpp-agent/cpp-code-agent/build-codex/cpp-code-agent",
+    "mode": "prompt",
+    "show_patch_only": false,
+    "campaign_id": "swebench-cpp-12",
+    "max_iterations": null,
+    "max_llm_calls": null,
+    "max_tool_calls": null,
+    "max_wall_clock_sec": null,
+    "extra_args": []
+  },
+  "retry": {
+    "max_attempts": 1,
+    "retry_error_classes": ["infra_error", "agent_failed"]
+  }
+}
