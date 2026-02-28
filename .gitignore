@@ -43,3 +43,7 @@
 # Harness generated artifacts
 runs/
 data/dataset/
+
+# Python cache
+__pycache__/
+*.pyc
