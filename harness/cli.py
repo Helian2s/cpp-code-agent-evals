@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from time import monotonic
 
 from harness.agent_runner import run_agent
-from harness.config import HarnessConfig, load_config
+from harness.config import DEFAULT_CONFIG_PATH, HarnessConfig, load_config
 from harness.dataset import import_dataset, list_instances, load_instance
 from harness.models import InstanceAttempt, InstanceResult
 from harness.reporting import summarize_run
@@ -292,6 +293,113 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _bedrock_auth_signals() -> list[str]:
+    signals: list[str] = []
+    if os.environ.get("AWS_BEARER_TOKEN_BEDROCK"):
+        signals.append("env:AWS_BEARER_TOKEN_BEDROCK")
+    if os.environ.get("AWS_ACCESS_KEY_ID"):
+        signals.append("env:AWS_ACCESS_KEY_ID")
+    if os.environ.get("AWS_PROFILE"):
+        signals.append("env:AWS_PROFILE")
+    if os.environ.get("AWS_REGION"):
+        signals.append("env:AWS_REGION")
+    if os.environ.get("AWS_DEFAULT_REGION"):
+        signals.append("env:AWS_DEFAULT_REGION")
+
+    aws_dir = Path.home() / ".aws"
+    if (aws_dir / "credentials").exists():
+        signals.append("file:~/.aws/credentials")
+    if (aws_dir / "config").exists():
+        signals.append("file:~/.aws/config")
+    return signals
+
+
+def cmd_preflight(args: argparse.Namespace) -> int:
+    config = _resolve_config(args.config)
+    checks: list[dict[str, object]] = []
+    warnings: list[str] = []
+    ok = True
+
+    def add_check(name: str, passed: bool, detail: str) -> None:
+        nonlocal ok
+        checks.append({"name": name, "ok": passed, "detail": detail})
+        if not passed:
+            ok = False
+
+    sut = config.agent.sut_binary
+    sut_exists = sut.exists()
+    sut_executable = os.access(sut, os.X_OK) if sut_exists else False
+    add_check(
+        "sut_binary",
+        sut_exists and sut_executable,
+        f"path={sut} exists={sut_exists} executable={sut_executable}",
+    )
+
+    index_path = config.dataset_dir / "index.json"
+    if index_path.exists():
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            instances = index.get("instances", [])
+            count = len(instances) if isinstance(instances, list) else 0
+            expected = args.expect_instances
+            if expected is None:
+                add_check("dataset_index", count > 0, f"path={index_path} instances={count}")
+            else:
+                add_check(
+                    "dataset_index",
+                    count == expected,
+                    f"path={index_path} instances={count} expected={expected}",
+                )
+        except Exception as exc:
+            add_check("dataset_index", False, f"path={index_path} parse_error={exc}")
+    else:
+        add_check("dataset_index", False, f"path={index_path} missing")
+
+    for repo_name, repo_path in sorted(config.repo_sources.items()):
+        exists = repo_path.exists()
+        has_git = (repo_path / ".git").exists() if exists else False
+        add_check(
+            f"repo_source:{repo_name}",
+            exists and has_git,
+            f"path={repo_path} exists={exists} has_git={has_git}",
+        )
+
+    try:
+        config.runs_dir.mkdir(parents=True, exist_ok=True)
+        writable = os.access(config.runs_dir, os.W_OK)
+        add_check("runs_dir", writable, f"path={config.runs_dir} writable={writable}")
+    except Exception as exc:
+        add_check("runs_dir", False, f"path={config.runs_dir} create_error={exc}")
+
+    auth_signals = _bedrock_auth_signals()
+    auth_ok = len(auth_signals) > 0
+    if args.require_bedrock_auth:
+        add_check(
+            "bedrock_auth",
+            auth_ok,
+            "signals=" + (", ".join(auth_signals) if auth_signals else "none"),
+        )
+    else:
+        add_check(
+            "bedrock_auth",
+            True,
+            "signals=" + (", ".join(auth_signals) if auth_signals else "none (soft check)"),
+        )
+        if not auth_ok:
+            warnings.append(
+                "No Bedrock credential/profile signal was detected; prompt runs may fail with auth_error."
+            )
+
+    output = {
+        "ok": ok,
+        "config_path": str((Path(args.config).resolve() if args.config else DEFAULT_CONFIG_PATH.resolve())),
+        "checks": checks,
+        "warnings": warnings,
+    }
+    print(json.dumps(output, indent=2))
+    return 0 if ok else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="harness", description="cpp-code-agent SWE-bench C++ harness")
     parser.add_argument("--config", default=None, help="Path to config YAML/JSON")
@@ -322,6 +430,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_summarize = sub.add_parser("summarize", help="Build summary artifacts for run")
     p_summarize.add_argument("--run-id", required=True)
     p_summarize.set_defaults(func=cmd_summarize)
+
+    p_preflight = sub.add_parser("preflight", help="Validate local prerequisites before run")
+    p_preflight.add_argument("--expect-instances", type=int, default=None)
+    p_preflight.add_argument("--require-bedrock-auth", action="store_true")
+    p_preflight.set_defaults(func=cmd_preflight)
 
     return parser
 

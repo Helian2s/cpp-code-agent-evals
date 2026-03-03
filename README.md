@@ -24,29 +24,30 @@ The harness does not modify `/home/val/Documents/cpp-agent/cpp-code-agent`.
 2. Install this package in editable mode:
 
 ```bash
-pip install -e .
+python3 -m pip install -e .
 ```
 
 3. Import dataset:
 
 ```bash
-harness import-dataset --zip /home/val/Desktop/cpp_tasks_multilingual.zip
+python3 -m harness.cli import-dataset --zip /home/val/Desktop/cpp_tasks_multilingual.zip
 ```
 
 4. List instances:
 
 ```bash
-harness list
+python3 -m harness.cli list
 ```
 
 ## CLI
 
 ```bash
-harness import-dataset --zip <zip_path>
-harness list
-harness run --instance <instance_id> --run-id <run_id> [--resume] [--show-patch-only]
-harness run-all --run-id <run_id> [--max-parallel 1] [--resume] [--show-patch-only]
-harness summarize --run-id <run_id>
+python3 -m harness.cli import-dataset --zip <zip_path>
+python3 -m harness.cli list
+python3 -m harness.cli preflight [--expect-instances 12] [--require-bedrock-auth]
+python3 -m harness.cli run --instance <instance_id> --run-id <run_id> [--resume] [--show-patch-only]
+python3 -m harness.cli run-all --run-id <run_id> [--max-parallel 1] [--resume] [--show-patch-only]
+python3 -m harness.cli summarize --run-id <run_id>
 ```
 
 ## Reproduction commands
@@ -78,8 +79,16 @@ scripts/run_all.sh sweep-12 --max-parallel 1 --resume
 Regenerate reports:
 
 ```bash
-harness summarize --run-id sweep-12
+python3 -m harness.cli summarize --run-id sweep-12
 ```
+
+`scripts/run_one.sh` and `scripts/run_all.sh` now run a strict preflight check by default before execution:
+- SUT binary present + executable
+- dataset index present with expected task count
+- source repo mappings present and git-initialized
+- Bedrock auth/profile signal present
+
+To bypass preflight intentionally, add `--skip-preflight` to the wrapper command.
 
 ## Artifacts
 
