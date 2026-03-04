@@ -32,6 +32,10 @@ def _can_retry(error_class: str | None, config: HarnessConfig) -> bool:
     return error_class in set(config.retry.retry_error_classes)
 
 
+def _progress(run_id: str, instance_id: str, message: str) -> None:
+    print(f"[{run_id}/{instance_id}] {message}", flush=True)
+
+
 def run_instance_once(
     config: HarnessConfig,
     run_id: str,
@@ -42,6 +46,7 @@ def run_instance_once(
 ) -> dict:
     result_path = _instance_result_path(config, run_id, instance_id)
     if resume and is_valid_result_file(result_path):
+        _progress(run_id, instance_id, "resume: existing result.json found, skipping")
         return read_instance_result(result_path)
 
     instance = load_instance(config.dataset_dir, instance_id)
@@ -63,6 +68,7 @@ def run_instance_once(
         attempt_start = monotonic()
         attempt_dir = layout.attempts_dir / f"attempt-{attempt_no}"
         attempt_dir.mkdir(parents=True, exist_ok=True)
+        _progress(run_id, instance_id, f"attempt {attempt_no}/{max_attempts}: start")
 
         error_class: str | None = None
         solved = False
@@ -78,6 +84,7 @@ def run_instance_once(
             if source_repo is None:
                 raise RuntimeError(f"No source repo mapping for {instance.repo}")
 
+            _progress(run_id, instance_id, "checkout: materializing workspace")
             materialize_workspace(
                 layout,
                 instance,
@@ -88,6 +95,7 @@ def run_instance_once(
 
             adapter = get_adapter(instance.repo)
 
+            _progress(run_id, instance_id, "build: baseline configure/build")
             baseline = adapter.prepare_build(
                 layout,
                 timeout_sec=config.timeouts.build_sec,
@@ -98,7 +106,9 @@ def run_instance_once(
 
             if not build_ok_before:
                 error_class = "baseline_build_failed"
+                _progress(run_id, instance_id, "build: baseline failed")
             else:
+                _progress(run_id, instance_id, "agent: running cpp-code-agent prompt")
                 agent = run_agent(
                     config,
                     layout,
@@ -115,7 +125,15 @@ def run_instance_once(
 
                 if agent.timed_out or agent.exit_code != 0:
                     error_class = "agent_failed"
+                    _progress(
+                        run_id,
+                        instance_id,
+                        f"agent: finished with exit_code={agent.exit_code} timed_out={agent.timed_out}",
+                    )
+                else:
+                    _progress(run_id, instance_id, "agent: finished successfully")
 
+                _progress(run_id, instance_id, "build: post-agent configure/build")
                 post = adapter.prepare_build(
                     layout,
                     timeout_sec=config.timeouts.build_sec,
@@ -126,8 +144,10 @@ def run_instance_once(
 
                 if not build_ok_after and error_class is None:
                     error_class = "tests_failed"
+                    _progress(run_id, instance_id, "build: post-agent failed")
 
                 if build_ok_after:
+                    _progress(run_id, instance_id, "tests: running targeted checks")
                     tests = run_task_tests(
                         adapter,
                         layout,
@@ -148,6 +168,11 @@ def run_instance_once(
                     )
                     if not solved and error_class is None:
                         error_class = "tests_failed"
+                    _progress(
+                        run_id,
+                        instance_id,
+                        f"tests: fail_to_pass_failed={len(fail_failed)} pass_to_pass_failed={len(pass_failed)}",
+                    )
 
                 metadata.update(collect_git_metadata(layout.repo_dir))
         except CommandTimeoutError:
@@ -184,9 +209,12 @@ def run_instance_once(
 
         if solved:
             final_error = None
+            _progress(run_id, instance_id, f"attempt {attempt_no}: solved")
             break
         if attempt_no < max_attempts and _can_retry(error_class, config):
+            _progress(run_id, instance_id, f"attempt {attempt_no}: retrying after error={error_class}")
             continue
+        _progress(run_id, instance_id, f"attempt {attempt_no}: stop with error={error_class}")
         break
 
     total_duration = monotonic() - run_started
@@ -209,6 +237,11 @@ def run_instance_once(
     )
 
     write_instance_result(result_path, result)
+    _progress(
+        run_id,
+        instance_id,
+        f"result written: solved={result.solved} error={result.error_class} duration_sec={result.duration_sec:.1f}",
+    )
     return result.to_json()
 
 

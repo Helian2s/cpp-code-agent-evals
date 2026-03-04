@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import json
 import shutil
 import time
@@ -175,16 +176,29 @@ def run_agent(
     exit_code = -1
 
     try:
-        result = run_command(
-            cmd,
-            timeout_sec=timeout_sec,
-            stdout_path=stdout_path,
-            stderr_path=stderr_path,
-            env={
-                # Keep agent artifacts local to this workspace for deterministic, isolated runs.
-                "CPP_CODE_AGENT_DATA_HOME": str(workspace.repo_dir),
-            },
-        )
+        heartbeat_sec = max(5, config.agent.progress_heartbeat_sec)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(
+                run_command,
+                cmd,
+                timeout_sec=timeout_sec,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                env={
+                    # Keep agent artifacts local to this workspace for deterministic, isolated runs.
+                    "CPP_CODE_AGENT_DATA_HOME": str(workspace.repo_dir),
+                },
+            )
+            while True:
+                try:
+                    result = fut.result(timeout=heartbeat_sec)
+                    break
+                except FutureTimeoutError:
+                    elapsed = time.monotonic() - start
+                    print(
+                        f"[{instance.instance_id}] agent running: {int(elapsed)}s elapsed",
+                        flush=True,
+                    )
         exit_code = result.exit_code
     except CommandTimeoutError:
         timed_out = True

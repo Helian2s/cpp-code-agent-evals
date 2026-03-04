@@ -124,9 +124,14 @@ A `result.json` is always written, even for failures.
 ## Determinism and resilience
 
 - Per-instance isolated workspace: `runs/<run_id>/workspaces/<instance_id>/repo`
+- Per-instance build dir is inside repo: `runs/<run_id>/workspaces/<instance_id>/repo/.harness-build`
 - Fixed processing order in sequential runs
 - Resume mode skips instances with valid `result.json`
 - Configurable timeouts for checkout/build/agent/tests
+- Prompt-loop guardrails enabled by default (`max_iterations`, `max_llm_calls`, `max_tool_calls`, `max_wall_clock_sec`)
+- Live terminal progress:
+  - stage updates (checkout/build/agent/tests),
+  - periodic agent heartbeat while prompt execution is running
 - Retry support via `configs/default.yaml` (`retry.max_attempts` + error-class allowlist)
 
 ## Configuration
@@ -136,6 +141,11 @@ Edit `configs/default.yaml` to override paths/timeouts/agent flags.
 Key fields:
 - `repo_sources`
 - `agent.sut_binary`
+- `agent.progress_heartbeat_sec`
+- `agent.max_iterations`
+- `agent.max_llm_calls`
+- `agent.max_tool_calls`
+- `agent.max_wall_clock_sec`
 - `timeouts.*`
 - `retry.max_attempts`
 - `retry.retry_error_classes`

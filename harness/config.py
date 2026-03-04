@@ -25,6 +25,7 @@ class AgentConfig:
     mode: str = "prompt"
     show_patch_only: bool = False
     campaign_id: str = "swebench-cpp-12"
+    progress_heartbeat_sec: int = 30
     max_iterations: int | None = None
     max_llm_calls: int | None = None
     max_tool_calls: int | None = None
@@ -105,6 +106,10 @@ def load_config(path: Path | None = None) -> HarnessConfig:
         mode=str(a_raw.get("mode", AgentConfig.mode)),
         show_patch_only=bool(a_raw.get("show_patch_only", AgentConfig.show_patch_only)),
         campaign_id=str(a_raw.get("campaign_id", AgentConfig.campaign_id)),
+        progress_heartbeat_sec=max(
+            5,
+            int(a_raw.get("progress_heartbeat_sec", AgentConfig.progress_heartbeat_sec)),
+        ),
         max_iterations=(
             int(a_raw["max_iterations"]) if a_raw.get("max_iterations") is not None else None
         ),

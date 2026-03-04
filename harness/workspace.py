@@ -65,7 +65,9 @@ def create_workspace_layout(runs_dir: Path, run_id: str, instance_id: str) -> Wo
     run_dir = runs_dir / run_id
     workspace_dir = run_dir / "workspaces" / instance_id
     repo_dir = workspace_dir / "repo"
-    build_dir = workspace_dir / "build"
+    # Keep the build tree inside repo-root so agent-side verification/sandbox
+    # policies treat it as in-workspace.
+    build_dir = repo_dir / ".harness-build"
     instance_dir = run_dir / "instances" / instance_id
     attempts_dir = instance_dir / "attempts"
     instance_dir.mkdir(parents=True, exist_ok=True)
@@ -125,6 +127,11 @@ def collect_git_metadata(repo_dir: Path) -> dict[str, object]:
     changed_files: list[str] = []
     added = 0
     deleted = 0
+    ignored_prefixes = (
+        ".cpp-code-agent",
+        ".agent-artifacts",
+        ".harness-build",
+    )
 
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -137,7 +144,7 @@ def collect_git_metadata(repo_dir: Path) -> dict[str, object]:
         if len(line) < 4:
             continue
         rel = line[3:].strip()
-        if rel.startswith(".cpp-code-agent/") or rel == ".cpp-code-agent":
+        if any(rel == prefix or rel.startswith(prefix + "/") for prefix in ignored_prefixes):
             continue
         changed_files.append(rel)
 
@@ -153,7 +160,7 @@ def collect_git_metadata(repo_dir: Path) -> dict[str, object]:
         if len(parts) < 3:
             continue
         a, d, path = parts
-        if path.startswith(".cpp-code-agent/") or path == ".cpp-code-agent":
+        if any(path == prefix or path.startswith(prefix + "/") for prefix in ignored_prefixes):
             continue
         if a.isdigit():
             added += int(a)

@@ -10,7 +10,7 @@
   "timeouts": {
     "checkout_sec": 300,
     "build_sec": 1800,
-    "agent_sec": 3600,
+    "agent_sec": 1500,
     "tests_sec": 1800
   },
   "agent": {
@@ -18,10 +18,11 @@
     "mode": "prompt",
     "show_patch_only": false,
     "campaign_id": "swebench-cpp-12",
-    "max_iterations": null,
-    "max_llm_calls": null,
-    "max_tool_calls": null,
-    "max_wall_clock_sec": null,
+    "progress_heartbeat_sec": 30,
+    "max_iterations": 60,
+    "max_llm_calls": 120,
+    "max_tool_calls": 160,
+    "max_wall_clock_sec": 900,
     "extra_args": []
   },
   "retry": {
